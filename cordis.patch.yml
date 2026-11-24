@@ -1,0 +1,10 @@
+# dsh-media-skin 的 bundle patch。
+#
+# 顶层是 YAML 数组，`insert` 追加一行；`name` 必须与安装的包名完全一致，
+# 否则 loader 只 warn 然后跳过 —— 表现是"插件装了但没生效"。
+#
+# 这里刻意不写 config：所有可调项都在插件自己的设置文件里
+# （$DSH_HOME/dsh-media-skin.json），界面上改完立刻生效，不用重启 DSH。
+- insert:
+    - id: media-skin
+      name: 'dsh-media-skin'

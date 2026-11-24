@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 300" width="640" height="300" role="img" aria-label="Local image drawn behind translucent interface panels, with blur and opacity sliders in a floating panel">
+  <defs>
+    <linearGradient id="dms-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3a6b"/>
+      <stop offset="0.55" stop-color="#7a5a86"/>
+      <stop offset="1" stop-color="#f2a26a"/>
+    </linearGradient>
+    <linearGradient id="dms-card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4f6fb"/>
+      <stop offset="1" stop-color="#e6ebf4"/>
+    </linearGradient>
+    <clipPath id="dms-scene">
+      <rect x="24" y="26" width="360" height="248" rx="12"/>
+    </clipPath>
+  </defs>
+
+  <rect x="0" y="0" width="640" height="300" rx="16" fill="url(#dms-card)"/>
+
+  <g clip-path="url(#dms-scene)">
+    <rect x="24" y="26" width="360" height="248" fill="url(#dms-sky)"/>
+    <circle cx="286" cy="118" r="46" fill="#ffd9a0" opacity="0.55"/>
+    <circle cx="286" cy="118" r="26" fill="#ffe9c4" opacity="0.9"/>
+    <path d="M24 214 L104 158 L156 196 L214 142 L286 214 L384 214 L384 274 L24 274 Z" fill="#3b3358" opacity="0.85"/>
+    <path d="M24 244 L96 204 L150 232 L228 190 L316 250 L384 232 L384 274 L24 274 Z" fill="#241f3a"/>
+  </g>
+  <rect x="24" y="26" width="360" height="248" rx="12" fill="none" stroke="#c9d1e2" stroke-width="1.5"/>
+
+  <rect x="24" y="26" width="96" height="248" rx="12" fill="#ffffff" opacity="0.72"/>
+  <rect x="40" y="52" width="62" height="9" rx="4.5" fill="#9aa6c0"/>
+  <rect x="40" y="76" width="52" height="7" rx="3.5" fill="#b8c2d6"/>
+  <rect x="40" y="94" width="58" height="7" rx="3.5" fill="#b8c2d6"/>
+  <rect x="40" y="112" width="48" height="7" rx="3.5" fill="#b8c2d6"/>
+
+  <rect x="120" y="26" width="264" height="248" fill="#ffffff" opacity="0.46"/>
+  <rect x="144" y="72" width="150" height="10" rx="5" fill="#8894b0" opacity="0.75"/>
+  <rect x="144" y="94" width="196" height="8" rx="4" fill="#9aa6c0" opacity="0.6"/>
+  <rect x="144" y="112" width="164" height="8" rx="4" fill="#9aa6c0" opacity="0.6"/>
+  <rect x="144" y="168" width="216" height="52" rx="12" fill="#ffffff" opacity="0.85"/>
+  <rect x="160" y="186" width="140" height="8" rx="4" fill="#a9b4c8"/>
+  <circle cx="344" cy="194" r="12" fill="#3b82f6"/>
+
+  <rect x="400" y="32" width="216" height="180" rx="14" fill="#ffffff" stroke="#d7dded" stroke-width="1.5"/>
+  <rect x="416" y="48" width="84" height="9" rx="4.5" fill="#6f7c99"/>
+  <rect x="416" y="64" width="52" height="7" rx="3.5" fill="#b8c2d6"/>
+
+  <rect x="416" y="86" width="184" height="6" rx="3" fill="#dfe5f0"/>
+  <rect x="416" y="86" width="64" height="6" rx="3" fill="#3b82f6"/>
+  <circle cx="480" cy="89" r="9" fill="#ffffff" stroke="#3b82f6" stroke-width="3"/>
+
+  <rect x="416" y="112" width="184" height="6" rx="3" fill="#dfe5f0"/>
+  <rect x="416" y="112" width="128" height="6" rx="3" fill="#8b5cf6"/>
+  <circle cx="544" cy="115" r="9" fill="#ffffff" stroke="#8b5cf6" stroke-width="3"/>
+
+  <rect x="416" y="138" width="184" height="6" rx="3" fill="#dfe5f0"/>
+  <rect x="416" y="138" width="40" height="6" rx="3" fill="#22a06b"/>
+  <circle cx="456" cy="141" r="9" fill="#ffffff" stroke="#22a06b" stroke-width="3"/>
+
+  <rect x="416" y="162" width="26" height="14" rx="7" fill="#3b82f6"/>
+  <circle cx="435" cy="169" r="5" fill="#ffffff"/>
+  <rect x="452" y="165" width="46" height="8" rx="4" fill="#c4ccdd"/>
+  <rect x="516" y="162" width="84" height="14" rx="7" fill="#eef2fa"/>
+
+  <circle cx="568" cy="244" r="17" fill="#ffffff" stroke="#d7dded" stroke-width="1.5"/>
+  <rect x="558" y="237" width="20" height="14" rx="3" fill="none" stroke="#4f46e5" stroke-width="2"/>
+  <circle cx="563" cy="242" r="1.8" fill="#4f46e5"/>
+  <path d="M559 249 L564 244 L567 247 L570 243.5 L577 249" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

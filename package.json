@@ -1,0 +1,64 @@
+{
+  "name": "dsh-media-skin",
+  "version": "0.3.0",
+  "description": "DSH 本地媒体皮肤：把任意本地图片或视频铺成界面背景，模糊、不透明度、亮度、饱和度、对比度、填充方式与缩放都能实时调，设置自动保存。",
+  "license": "MIT",
+  "author": "svd748xyz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/svd748xyz/dsh-media-skin.git"
+  },
+  "homepage": "https://github.com/svd748xyz/dsh-media-skin#readme",
+  "bugs": {
+    "url": "https://github.com/svd748xyz/dsh-media-skin/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "background",
+    "wallpaper",
+    "media",
+    "video",
+    "skin",
+    "theme"
+  ],
+  "type": "module",
+  "scripts": {
+    "test": "node tests/smoke.mjs",
+    "prepublishOnly": "node tests/smoke.mjs",
+    "verify:home": "node scripts/make-verify-home.mjs"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "cordis.patch.yml",
+    "locale",
+    "docs",
+    "assets",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "screenshots.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ]
+    }
+  }
+}

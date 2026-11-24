@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Media skin",
+    "description": "Paints the Web interface with any local image or video. Open the picture button at the bottom-right of the window to reach the panel: Choose file… copies the media into $DSH_HOME/dsh-media-skin/media/, and Use path reads an absolute local path in place. The panel tunes blur, media opacity, UI opacity (0% leaves the media untouched; higher adds a theme-matched wash for readable text), brightness, saturation, contrast and zoom live, plus fit, position, and — for video — playback speed and pause. Dialogs, cards, menus and settings pages keep their native opaque background so body text stays readable. Settings save to $DSH_HOME/dsh-media-skin.json and survive a reload; the plugin never edits the profile's cordis.patch.yml. Affects the Web interface only (desktop shell and dsh web). It does not coordinate with other wallpaper plugins such as dsh-video-skin: run one of them at a time. Supported files: png, jpg, jpeg, webp, gif, avif, bmp, svg, mp4, webm, ogv, mov, m4v; uploads are capped at 512 MB.",
+    "detail": "docs/DETAIL.md"
+  }
+}

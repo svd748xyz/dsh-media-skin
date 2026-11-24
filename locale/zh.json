@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "本地媒体皮肤",
+    "description": "把任意本地图片或视频铺成 Web 界面背景。点窗口右下角的相框圆钮打开面板：「选择文件…」把素材复制一份进 $DSH_HOME/dsh-media-skin/media/，「应用路径」直接读本地绝对路径、不复制。面板里实时调模糊、画面不透明度、界面不透明度（0% = 完全原始素材，越高越白/越黑越好读）、亮度、饱和度、对比度、缩放，以及填充方式和取景位置；素材是视频时还有播放速度和暂停。弹层、卡片、菜单、设置页保持原生不透明，正文始终可读。设置写在 $DSH_HOME/dsh-media-skin.json，刷新页面仍在，插件不碰 profile 的 cordis.patch.yml。只影响 Web 界面（桌面壳与 dsh web）；与 dsh-video-skin 之类别的壁纸插件不互通，请只开一个。支持 png、jpg、jpeg、webp、gif、avif、bmp、svg、mp4、webm、ogv、mov、m4v，上传副本上限 512 MB。",
+    "detail": "docs/DETAIL.zh.md"
+  }
+}
