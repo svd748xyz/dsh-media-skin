@@ -40,13 +40,10 @@ window.__ModuleLoader__.load({
     /** 落到 root 上的 CSS 变量：卸载时要一个一个摘掉，所以集中登记。 */
     const CSS_VARS = [
       '--dms-blur',
-      '--dms-bleed',
       '--dms-opacity',
       '--dms-brightness',
       '--dms-saturate',
       '--dms-contrast',
-      '--dms-scrim',
-      '--dms-sidebar-extra',
       '--dms-sidebar-w',
     ]
 
@@ -95,8 +92,6 @@ window.__ModuleLoader__.load({
       brightness: '亮度',
       saturate: '饱和度',
       contrast: '对比度',
-      surface: '界面不透明度',
-      sidebarExtra: '侧栏压色',
       rate: '播放速度',
       pause: '暂停',
       play: '播放',
@@ -148,8 +143,6 @@ window.__ModuleLoader__.load({
       brightness: 'Brightness',
       saturate: 'Saturation',
       contrast: 'Contrast',
-      surface: 'UI opacity',
-      sidebarExtra: 'Sidebar tone',
       rate: 'Playback speed',
       pause: 'Pause',
       play: 'Play',
@@ -200,32 +193,38 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) #dms-backdrop{background:#0e11
 #dms-backdrop .dms-layer[data-layer="main"]{left:var(--dms-sidebar-w,264px)}
 #dms-backdrop .dms-layer[data-layer="sidebar"]{right:auto;width:var(--dms-sidebar-w,264px)}
 #dms-backdrop .dms-layer[data-hidden="1"]{display:none}
-#dms-backdrop .dms-holder{position:absolute;inset:calc(-1 * var(--dms-bleed,0px))}
+#dms-backdrop .dms-holder{position:absolute;inset:0}
 #dms-backdrop .dms-media{position:absolute;inset:0;width:100%;height:100%;display:block;
   object-fit:cover;object-position:var(--dms-px,50%) var(--dms-py,50%);
   transform:scale(var(--dms-zoom,1));transform-origin:center center;
   opacity:var(--dms-opacity,1);
-  filter:blur(var(--dms-blur,0px)) brightness(var(--dms-brightness,1)) saturate(var(--dms-saturate,1)) contrast(var(--dms-contrast,1));
+  filter:brightness(var(--dms-brightness,1)) saturate(var(--dms-saturate,1)) contrast(var(--dms-contrast,1));
   transition:opacity 240ms ease}
-/* 底色层：**唯一**的一层压色。它压在素材上、界面下，所以"界面不透明度"就是
-   这一层的 alpha，调到 0 时画面是原始素材，不会再有任何"灰蒙"。 */
-#dms-backdrop .dms-scrim{position:absolute;inset:0;background:rgba(255,255,255,var(--dms-scrim,0.4))}
-html[data-dms="on"]:has(body[data-ds-dark-theme]) #dms-backdrop .dms-scrim{background:rgba(0,0,0,var(--dms-scrim,0.4))}
+/* 模糊：**不改素材的尺寸**。以前是把容器反向放大来推掉模糊的软边，cover 的比例跟着容器变，
+   结果一拖模糊整张图就自己放大。这里换成盖在素材上的一层 backdrop-filter：它采样的是
+   "已经画好的背景"（Chromium 对采样做边缘 clamp），素材元素保持铺满视口，取景一格都不动。 */
+#dms-backdrop .dms-frost{position:absolute;inset:0;pointer-events:none;
+  -webkit-backdrop-filter:blur(var(--dms-blur,0px));
+  backdrop-filter:blur(var(--dms-blur,0px))}
+#dms-backdrop .dms-frost[data-on="0"]{display:none}
 
 /* ── 画布透明化：不透明的话素材永远被盖住。
       这里刻意写成 transparent 而不是"半透明白色"：同一个 token 会被多个嵌套容器各画一遍，
-      每叠一层就等于又加了一层白膜 —— 那是"调到底还是灰"的根。压色统一交给上面那层 scrim。
+      每叠一层就等于又加了一层白膜 —— 那是"调到底还是灰"的根。
+      素材的淡出统一交给每层的"画面不透明度"。
       只动"画布 + 侧栏"，弹层/卡片/设置页（bg-layer-*）保持原生不透明。 ── */
 html[data-dms="on"],html[data-dms="on"] body{background-color:transparent !important}
 html[data-dms="on"]:has(body[data-ds-dark-theme]){background-color:#0e1116 !important}
 html[data-dms="on"]:not(:has(body[data-ds-dark-theme])){background-color:#eef1f5 !important}
+/* 侧栏那层薄涂层是固定的：它只负责让导航文字在花哨壁纸上还读得出来，不做成可调项
+   （可调的话就又多一个跟"画面不透明度"重合的旋钮）。 */
 html[data-dms="on"] body{
   --dsw-alias-bg-base:transparent !important;
-  --dsw-specific-sidebar-fill:rgba(255,255,255,var(--dms-sidebar-extra,.05)) !important;
+  --dsw-specific-sidebar-fill:rgba(255,255,255,.06) !important;
 }
 html[data-dms="on"] body[data-ds-dark-theme]{
   --dsw-alias-bg-base:transparent !important;
-  --dsw-specific-sidebar-fill:rgba(0,0,0,var(--dms-sidebar-extra,.05)) !important;
+  --dsw-specific-sidebar-fill:rgba(0,0,0,.06) !important;
 }
 
 /* ── 深色壳补偿 ──
@@ -390,8 +389,6 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
 .dms-range::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-bg-layer-1,#fff);
   border:2px solid var(--dsw-alias-brand-primary,#4d6bfe)}
 .dms-range:disabled{opacity:.45;cursor:default}
-.dms-divider{height:1px;margin:0;
-  background:color-mix(in srgb,var(--dsw-alias-border-l1,#0f1a32) 46%,transparent)}
 
 /* ── 复制调色：虚线胶囊，点完短暂变成实心"已同步" ── */
 .dms-sync{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;box-sizing:border-box;
@@ -537,7 +534,6 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
     function createEngine() {
       const root = document.documentElement
       let layer = null
-      let scrim = null
       const nodes = { full: null, main: null, sidebar: null }
       const keyOf = { full: '', main: '', sidebar: '' }
 
@@ -558,12 +554,14 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
           const holder = document.createElement('div')
           holder.className = 'dms-holder'
           el.appendChild(holder)
+          // 模糊层：盖在素材上、只做 backdrop-filter，素材本身的尺寸永远不动。
+          const frost = document.createElement('div')
+          frost.className = 'dms-frost'
+          frost.dataset.on = '0'
+          el.appendChild(frost)
           layer.appendChild(el)
-          nodes[key] = { layer: el, holder, media: null }
+          nodes[key] = { layer: el, holder, frost, media: null }
         }
-        scrim = document.createElement('div')
-        scrim.className = 'dms-scrim'
-        layer.appendChild(scrim)
         document.body.insertBefore(layer, document.body.firstChild)
         window.addEventListener('resize', syncSidebarWidth)
       }
@@ -617,7 +615,6 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
         for (const key of LAYERS) dropMedia(key)
         if (layer !== null && layer.parentNode !== null) layer.parentNode.removeChild(layer)
         layer = null
-        scrim = null
         for (const key of LAYERS) {
           nodes[key] = null
           keyOf[key] = ''
@@ -649,12 +646,6 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
 
         const percent = (value) => (Math.max(0, Math.min(200, value)) / 100).toFixed(3)
         root.setAttribute('data-dms', 'on')
-        // 界面不透明度 = 压在素材上的那一层底色（亮主题白、暗主题黑）的 alpha。
-        root.style.setProperty('--dms-scrim', Math.max(0, Math.min(1, settings.surface / 100)).toFixed(3))
-        root.style.setProperty(
-          '--dms-sidebar-extra',
-          (0.03 + Math.max(0, Math.min(1, (settings.sidebar ?? 50) / 100)) * 0.05).toFixed(3),
-        )
 
         const videoSettings = settings.video || {}
         for (const key of LAYERS) {
@@ -682,8 +673,8 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
           const look = settings.layers && settings.layers[key] && settings.layers[key].look ? settings.layers[key].look : {}
           const blur = typeof look.blur === 'number' ? look.blur : 0
           slot.layer.style.setProperty('--dms-blur', `${blur}px`)
-          // 模糊会把边缘吃掉一圈，所以容器反向放大一点把边缘推到视口外。
-          slot.layer.style.setProperty('--dms-bleed', `${Math.ceil(blur * 2.2)}px`)
+          // 模糊交给 frost 层的 backdrop-filter；0 就整层撤掉，不留无用的合成层。
+          if (slot.frost) slot.frost.dataset.on = blur > 0 ? '1' : '0'
           slot.layer.style.setProperty('--dms-opacity', percent(typeof look.mediaOpacity === 'number' ? look.mediaOpacity : 100))
           slot.layer.style.setProperty('--dms-brightness', percent(typeof look.brightness === 'number' ? look.brightness : 100))
           slot.layer.style.setProperty('--dms-saturate', percent(typeof look.saturate === 'number' ? look.saturate : 100))
@@ -1292,8 +1283,6 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
               body: JSON.stringify({
                 enabled: true,
                 mode: 'full',
-                surface: 40,
-                sidebar: 48,
                 video: { rate: 1, paused: false },
                 layers: {
                   full: { crop: { x: 0.5, y: 0.5, zoom: 1 }, look: { ...DEFAULT_LOOK } },
@@ -1418,33 +1407,6 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
         })
       }
 
-      /** 全局压色滑块（界面不透明度 / 侧栏压色）。 */
-      const globalSlider = (key, labelKey, min, max) => {
-        const current = settings ? settings[key] : min
-        return h(
-          'div',
-          { className: 'dms-field', key },
-          h(
-            'div',
-            { className: 'dms-row dms-row-between' },
-            h('span', { className: 'dms-label' }, t(labelKey)),
-            h('span', { className: 'dms-value' }, `${current}${t('percent')}`),
-          ),
-          h('input', {
-            className: 'dms-range',
-            type: 'range',
-            min,
-            max,
-            step: 1,
-            value: current,
-            style: { '--dms-fill': fillOf(current, min, max) },
-            disabled: settings === null,
-            'aria-label': t(labelKey),
-            onChange: (event) => patch({ [key]: Number(event.target.value) }),
-          }),
-        )
-      }
-
       const mediaOfCropping = cropping ? cropping.info : null
       const sidebarWidth = typeof window !== 'undefined' ? measureSidebarWidth() : DEFAULT_SIDEBAR_WIDTH
 
@@ -1460,7 +1422,7 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
        * 把当前这层的五个画面参数整组复制到另一层。
        *
        * 分栏常用的就是"两边调成一个调子"，一张张拖十条滑块很烦；
-       * 复制只是把 look 搬过去，裁切、素材、压色都不动。
+       * 复制只是把 look 搬过去，裁切与素材都不动。
        */
       const copyLookTo = (targetKey) => {
         if (targetKey === null) return
@@ -1581,7 +1543,7 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
                       : null,
                   ),
 
-              // ── 画面（每个图层一套；底部两条是全局压色）──
+              // ── 画面（每个图层一套，滑块永远只有一组）──
               settings === null
                 ? null
                 : h(
@@ -1645,9 +1607,6 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
                           ),
                           syncDone ? t('synced') : `${t('syncLook')} ${t(layerLabelOf(otherLayerKey))}`,
                         ),
-                    h('div', { className: 'dms-divider' }),
-                    globalSlider('surface', 'surface', 0, 100),
-                    globalSlider('sidebar', 'sidebarExtra', 10, 100),
                   ),
 
               // ── 视频 ──

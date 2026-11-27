@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { DEFAULTS, sanitize, merge } from '../lib/defaults.js'
+import { sanitize, merge } from '../lib/defaults.js'
 import { parseRange, serveFile } from '../lib/http.js'
 import { refusalFor, refusalMessage } from '../lib/gate.js'
 import { kindOf, contentTypeFor, safeFileName } from '../lib/media.js'
@@ -23,8 +23,9 @@ const junk = sanitize({
     },
   },
 })
-assert.equal(junk.version, 3, '设置版本升到 3')
-assert.equal(junk.surface, 0, 'surface 夹到下限（0 = 原始素材）')
+assert.equal(junk.version, 4, '设置版本升到 4')
+assert.equal('surface' in junk, false, 'v4 不再有全局压色键')
+assert.equal('sidebar' in junk, false, 'v4 不再有侧栏压色键')
 assert.equal(junk.mode, 'full', '非法 mode 回默认')
 assert.equal(junk.layers.full.crop.x, 1, '裁切 x 夹到 1')
 assert.equal(junk.layers.full.crop.y, 0, '裁切 y 夹到 0')
@@ -34,11 +35,20 @@ assert.equal(junk.layers.full.look.mediaOpacity, 50, '层内指定值保留')
 assert.equal(junk.layers.main.look.blur, 60, '旧顶层 blur 迁移到没写 look 的层')
 assert.equal(junk.layers.full.media.path, 'evil.jpg', '上传项去掉路径分隔符')
 assert.equal('blur' in junk, false, '画面参数不再留在顶层')
-assert.equal(sanitize(null).surface, DEFAULTS.surface, 'null 输入回默认')
+assert.equal(sanitize(null).version, 4, 'null 输入回默认版本')
+assert.equal(sanitize(null).layers.full.look.mediaOpacity, 100, '新装默认不压淡')
 assert.equal(sanitize({ video: { rate: 3 } }).video.rate, 1, '非法倍速回 1')
 assert.equal(sanitize({ video: { rate: 1.5 } }).video.rate, 1.5)
-// 旧版本有 veil（文字保护蒙版），现在合并进 surface，读取时直接丢弃
+// 旧版本有 veil（文字保护蒙版），早就并入压色、现在连压色也折进每层的画面不透明度
 assert.equal('veil' in sanitize({ veil: 90 }), false, '旧 veil 字段被丢弃')
+
+// v3 → v4：全局压色折进每层画面不透明度，且只折一次
+const folded = sanitize({ version: 3, surface: 34, sidebar: 48, layers: { full: { look: { mediaOpacity: 80 } } } })
+assert.equal(folded.version, 4, 'v3 文件升到 4')
+assert.equal(folded.layers.full.look.mediaOpacity, 52.8, '80% × (1 − 34%) 折进层内不透明度')
+assert.equal(folded.layers.main.look.mediaOpacity, 66, '没写过的层按默认 100% × 66% 折')
+assert.equal('surface' in folded, false, '折完丢掉 surface')
+assert.equal(sanitize(folded).layers.full.look.mediaOpacity, 52.8, '再洗一次不会二次折')
 // v2 的 fit / position / scale 三件套不再输出
 assert.equal('fit' in sanitize({ fit: 'contain' }), false, '旧 fit 不再出现在设置里')
 assert.equal('position' in sanitize({ position: 'top' }), false, '旧 position 不再出现在设置里')
