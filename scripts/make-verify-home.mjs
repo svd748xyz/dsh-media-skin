@@ -54,10 +54,12 @@ try {
 fs.symlinkSync(packageRoot, linkPath, 'junction')
 
 // --theme：写 profile 的 patch 层，覆盖壳的 ui-theme（id 由 dsh-web-app 提供）。
+// 不带 --theme 时把上一轮生成的 patch 删掉，免得深色设置悄悄留在下一次浅色验收里。
+const patchFile = path.join(profileDir, 'cordis.patch.yml')
+const PATCH_MARK = '# 由 scripts/make-verify-home.mjs --theme 生成，仅用于验收。'
 if (args.theme !== null) {
-  const patchFile = path.join(profileDir, 'cordis.patch.yml')
   const patch = [
-    '# 由 scripts/make-verify-home.mjs --theme 生成，仅用于验收。',
+    PATCH_MARK,
     '- id: ui-theme',
     '  name: "@deepseek-ai/dsh-client-ui-theme"',
     '  config:',
@@ -65,6 +67,8 @@ if (args.theme !== null) {
     '',
   ].join('\n')
   fs.writeFileSync(patchFile, patch, 'utf8')
+} else if (fs.existsSync(patchFile) && fs.readFileSync(patchFile, 'utf8').startsWith(PATCH_MARK)) {
+  fs.rmSync(patchFile, { force: true })
 }
 
 console.log(JSON.stringify({ home, profileDir, profile: args.profile, theme: args.theme }))
