@@ -5,3 +5,6 @@ node_modules/
 # 验收页用的 React UMD 是第三方下载物，不进仓库；按 index.html 里的版本号现取即可。
 tests/harness/react.js
 tests/harness/react-dom.js
+
+# npm pack 产物不入库（.npmignore 之外再兜一层）
+*.tgz
