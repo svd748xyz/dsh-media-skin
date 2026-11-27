@@ -2,3 +2,6 @@ node_modules/
 .verify-home/
 *.log
 .DS_Store
+# 验收页用的 React UMD 是第三方下载物，不进仓库；按 index.html 里的版本号现取即可。
+tests/harness/react.js
+tests/harness/react-dom.js

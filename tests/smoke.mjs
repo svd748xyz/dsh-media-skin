@@ -2,33 +2,78 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { DEFAULTS, sanitize, merge } from '../lib/defaults.js'
 import { parseRange, serveFile } from '../lib/http.js'
 import { refusalFor, refusalMessage } from '../lib/gate.js'
 import { kindOf, contentTypeFor, safeFileName } from '../lib/media.js'
+import { describe } from '../index.js'
 
 // ── sanitize ────────────────────────────────────────────────────────────────
-const junk = sanitize({ blur: 999, surface: -5, fit: 'wat', media: { source: 'upload', path: '..\\..\\evil.jpg', name: 'x' } })
-assert.equal(junk.blur, 60, 'blur 夹到上限')
+const junk = sanitize({
+  blur: 999,
+  surface: -5,
+  mode: 'wat',
+  layers: {
+    full: {
+      crop: { x: 9, y: -2, zoom: 99 },
+      look: { blur: 999, mediaOpacity: 50 },
+      media: { source: 'upload', path: '..\\..\\evil.jpg', name: 'x' },
+    },
+  },
+})
+assert.equal(junk.version, 3, '设置版本升到 3')
 assert.equal(junk.surface, 0, 'surface 夹到下限（0 = 原始素材）')
-assert.equal(junk.fit, 'cover', '非法 fit 回默认')
-assert.equal(junk.media.path, 'evil.jpg', '上传项去掉路径分隔符')
-assert.equal(sanitize(null).blur, DEFAULTS.blur, 'null 输入回默认')
-assert.equal(sanitize({ blur: 'abc' }).blur, 0, 'NaN 回默认')
+assert.equal(junk.mode, 'full', '非法 mode 回默认')
+assert.equal(junk.layers.full.crop.x, 1, '裁切 x 夹到 1')
+assert.equal(junk.layers.full.crop.y, 0, '裁切 y 夹到 0')
+assert.equal(junk.layers.full.crop.zoom, 4, 'zoom 夹到 4')
+assert.equal(junk.layers.full.look.blur, 60, '每层 blur 夹到上限')
+assert.equal(junk.layers.full.look.mediaOpacity, 50, '层内指定值保留')
+assert.equal(junk.layers.main.look.blur, 60, '旧顶层 blur 迁移到没写 look 的层')
+assert.equal(junk.layers.full.media.path, 'evil.jpg', '上传项去掉路径分隔符')
+assert.equal('blur' in junk, false, '画面参数不再留在顶层')
+assert.equal(sanitize(null).surface, DEFAULTS.surface, 'null 输入回默认')
 assert.equal(sanitize({ video: { rate: 3 } }).video.rate, 1, '非法倍速回 1')
 assert.equal(sanitize({ video: { rate: 1.5 } }).video.rate, 1.5)
 // 旧版本有 veil（文字保护蒙版），现在合并进 surface，读取时直接丢弃
 assert.equal('veil' in sanitize({ veil: 90 }), false, '旧 veil 字段被丢弃')
+// v2 的 fit / position / scale 三件套不再输出
+assert.equal('fit' in sanitize({ fit: 'contain' }), false, '旧 fit 不再出现在设置里')
+assert.equal('position' in sanitize({ position: 'top' }), false, '旧 position 不再出现在设置里')
+assert.equal('scale' in sanitize({ scale: 150 }), false, '旧 scale 不再出现在设置里')
 
-// 空 path 但 source=upload：退回 none，避免"有来源没文件"
-assert.equal(sanitize({ media: { source: 'upload', path: '', name: '' } }).media.source, 'none')
+// v1 → v3 迁移：顶层 media 搬进 layers.full，取景位置与缩放翻译成裁切中心与倍数
+const migrated = sanitize({ media: { source: 'path', path: 'a.jpg', name: 'a' }, position: 'top left', scale: 150, blur: 12 })
+assert.equal(migrated.mode, 'full')
+assert.equal(migrated.layers.full.media.path, 'a.jpg', '旧素材迁进 full 层')
+assert.equal(migrated.layers.full.crop.x, 0, '左上 → 取景中心 x=0')
+assert.equal(migrated.layers.full.crop.y, 0, '左上 → 取景中心 y=0')
+assert.equal(migrated.layers.full.crop.zoom, 1.5, 'scale 150% → zoom 1.5')
+assert.equal(migrated.layers.full.look.blur, 12, '旧顶层 blur 迁进 full 层')
+assert.equal(migrated.layers.sidebar.look.blur, 12, '迁移覆盖三个图层')
+assert.equal(sanitize({ media: { source: 'upload', path: '', name: '' } }).layers.full.media.source, 'none', '空 path 退回 none')
 
 // ── merge ───────────────────────────────────────────────────────────────────
-const merged = merge({ media: { source: 'path', path: 'a.jpg', name: 'a' }, blur: 1 }, { media: { path: 'b.jpg' }, blur: 9 })
-assert.equal(merged.media.path, 'b.jpg', '深合并覆盖')
-assert.equal(merged.media.source, 'path', '深合并保留兄弟字段')
-assert.equal(merged.blur, 9)
+const merged = merge(
+  {
+    mode: 'full',
+    layers: {
+      main: {
+        media: { source: 'path', path: 'a.jpg', name: 'a' },
+        crop: { x: 0.5, y: 0.5, zoom: 1 },
+        look: { blur: 0, mediaOpacity: 100, brightness: 100, saturate: 100, contrast: 100 },
+      },
+    },
+  },
+  { layers: { main: { crop: { x: 0.2 }, look: { blur: 8 } } } },
+)
+assert.equal(merged.layers.main.crop.x, 0.2, '深合并覆盖 crop.x')
+assert.equal(merged.layers.main.crop.y, 0.5, '深合并保留兄弟字段 crop.y')
+assert.equal(merged.layers.main.look.blur, 8, '深合并覆盖 look.blur')
+assert.equal(merged.layers.main.look.brightness, 100, '深合并保留兄弟字段 look.brightness')
+assert.equal(merged.layers.main.media.path, 'a.jpg', '深合并保留同层 media')
 
 // ── kindOf / contentTypeFor / safeFileName ─────────────────────────────────
 assert.equal(kindOf('a.MP4'), 'video')
@@ -101,5 +146,46 @@ assert.deepEqual(
 assert.equal(refusalFor(fakeCtx({ requestRejection: () => 403, admit: () => ({ peer: {} }) }), nodeReq), 403, '优先 requestRejection')
 assert.equal(refusalMessage(401).includes('登录'), true, '401 有文案')
 assert.equal(refusalMessage(999), '请求被拒绝', '未登记状态码有兜底')
+
+// ── describe（宿主快照：每层一份素材信息）──────────────────────────────────
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dms-home-'))
+const previousHome = process.env.DSH_HOME
+process.env.DSH_HOME = home
+fs.mkdirSync(path.join(home, 'dsh-media-skin', 'media'), { recursive: true })
+fs.writeFileSync(path.join(home, 'dsh-media-skin', 'media', 'bg.png'), Buffer.from('png'))
+
+const snapshot = describe(
+  sanitize({
+    mode: 'split',
+    layers: {
+      full: { media: { source: 'upload', path: 'bg.png', name: 'bg.png' }, crop: { x: 0.2, y: 0.8, zoom: 2 } },
+      sidebar: { media: { source: 'upload', path: 'bg.png', name: 'bg.png' } },
+    },
+  }),
+)
+assert.equal(snapshot.settings.mode, 'split')
+assert.equal(snapshot.layers.full.available, true, 'full 层素材可用')
+assert.ok(snapshot.layers.full.url.includes('layer=full'), 'full 层 url 带 layer')
+assert.ok(snapshot.layers.full.url.includes('v='), 'url 带版本号')
+assert.equal(snapshot.layers.main.available, false, '没配的 main 层不可用')
+assert.equal(snapshot.layers.sidebar.available, true, 'sidebar 层素材可用')
+assert.ok(snapshot.layers.sidebar.url.includes('layer=sidebar'), 'sidebar 层 url 带 layer')
+assert.equal(snapshot.layers.full.size, 3, 'size 来自真实文件')
+
+if (previousHome === undefined) delete process.env.DSH_HOME
+else process.env.DSH_HOME = previousHome
+fs.rmSync(home, { recursive: true, force: true })
+
+// ── 头像资产（宿主 /avatar 路由读的就是这个文件）─────────────────────────────
+const rootDir = fileURLToPath(new URL('..', import.meta.url))
+const avatarBytes = fs.readFileSync(path.join(rootDir, 'assets', 'avatar.png'))
+assert.equal(avatarBytes.subarray(1, 4).toString('latin1'), 'PNG', 'avatar.png 是 PNG')
+assert.ok(avatarBytes.byteLength > 8 * 1024, 'avatar.png 不是空占位')
+const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'))
+assert.ok(pkg.files.includes('assets'), 'npm 包会带上 assets/')
+assert.equal(pkg.exports['./icon'], './icon.svg', '插件图标仍是 SVG 导出')
+const iconText = fs.readFileSync(path.join(rootDir, 'icon.svg'), 'utf8')
+assert.ok(iconText.includes('data:image/png;base64,'), 'icon.svg 内嵌了位图')
+assert.ok(!iconText.includes('<script'), 'icon.svg 不含脚本')
 
 console.log('all assertions passed')

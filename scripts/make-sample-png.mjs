@@ -1,8 +1,11 @@
 /**
  * 生成一张示例壁纸 PNG（纯 node，无依赖）：天空渐变 + 太阳 + 两层山。
- * 只用于本地验收，不属于插件产物。
+ * 只用于本地验收 / 市场截图，不属于插件产物。
  *
- * 用法：node scripts/make-sample-png.mjs <输出路径>
+ * 用法：node scripts/make-sample-png.mjs <输出路径> [--palette sunset|dawn]
+ *
+ * - sunset：紫蓝夜空 + 暖橙落日（默认）
+ * - dawn：青灰晨雾 + 冷白低日
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -11,6 +14,36 @@ import zlib from 'node:zlib'
 
 const WIDTH = 1280
 const HEIGHT = 720
+
+const PALETTES = {
+  sunset: {
+    skyTop: [38, 52, 108],
+    skyBottom: [246, 158, 106],
+    skyRamp: 1.35,
+    sun: { x: 0.72, y: 0.34, radius: 320, tint: [120, 96, 40] },
+    far: { base: [52, 44, 82], deep: [36, 30, 62], blend: 260 },
+    near: { base: [28, 24, 48], deep: [18, 16, 34], blend: 220 },
+  },
+  dawn: {
+    skyTop: [16, 44, 54],
+    skyBottom: [188, 216, 208],
+    skyRamp: 1.1,
+    sun: { x: 0.32, y: 0.3, radius: 430, tint: [74, 92, 78] },
+    far: { base: [86, 112, 112], deep: [58, 82, 86], blend: 240 },
+    near: { base: [38, 58, 62], deep: [24, 38, 42], blend: 200 },
+  },
+}
+
+const args = { target: null, palette: 'sunset' }
+for (let index = 2; index < process.argv.length; index += 1) {
+  const token = process.argv[index]
+  if (token === '--palette') args.palette = process.argv[(index += 1)]
+  else if (args.target === null) args.target = token
+}
+const palette = PALETTES[args.palette]
+if (palette === undefined) {
+  throw new Error(`未知 palette：${args.palette}（可选：${Object.keys(PALETTES).join(' / ')}）`)
+}
 
 /** CRC32（PNG 每个 chunk 都要）。 */
 const CRC_TABLE = (() => {
@@ -47,33 +80,32 @@ for (let y = 0; y < HEIGHT; y += 1) {
   raw[offset] = 0
   offset += 1
   const t = y / HEIGHT
-  // 天空：紫蓝 → 暖橙
-  let color = mix([38, 52, 108], [246, 158, 106], Math.min(1, t * 1.35))
+  const color = mix(palette.skyTop, palette.skyBottom, Math.min(1, t * palette.skyRamp))
   for (let x = 0; x < WIDTH; x += 1) {
     const px = x / WIDTH
     let r = color[0]
     let g = color[1]
     let b = color[2]
     // 太阳光晕
-    const dx = (px - 0.72) * WIDTH
-    const dy = (y - HEIGHT * 0.34) * 1.0
+    const dx = (px - palette.sun.x) * WIDTH
+    const dy = y - HEIGHT * palette.sun.y
     const dist = Math.hypot(dx, dy)
-    const glow = Math.max(0, 1 - dist / 320) ** 2
-    r += glow * 120
-    g += glow * 96
-    b += glow * 40
+    const glow = Math.max(0, 1 - dist / palette.sun.radius) ** 2
+    r += glow * palette.sun.tint[0]
+    g += glow * palette.sun.tint[1]
+    b += glow * palette.sun.tint[2]
     // 远山
     const far = HEIGHT * 0.62 + Math.sin(px * 7.2) * 34 + Math.sin(px * 2.1) * 46
     // 近山
     const near = HEIGHT * 0.78 + Math.sin(px * 4.4 + 1.2) * 44 + Math.sin(px * 9.7) * 18
     if (y > far) {
-      const k = mix([52, 44, 82], [36, 30, 62], (y - far) / 260)
+      const k = mix(palette.far.base, palette.far.deep, (y - far) / palette.far.blend)
       r = k[0]
       g = k[1]
       b = k[2]
     }
     if (y > near) {
-      const k = mix([28, 24, 48], [18, 16, 34], (y - near) / 220)
+      const k = mix(palette.near.base, palette.near.deep, (y - near) / palette.near.blend)
       r = k[0]
       g = k[1]
       b = k[2]
@@ -101,7 +133,7 @@ const png = Buffer.concat([
   chunk('IEND', Buffer.alloc(0)),
 ])
 
-const target = process.argv[2] ?? path.join(process.cwd(), 'sample-wallpaper.png')
+const target = args.target ?? path.join(process.cwd(), 'sample-wallpaper.png')
 fs.mkdirSync(path.dirname(path.resolve(target)), { recursive: true })
 fs.writeFileSync(target, png)
-console.log(JSON.stringify({ target: path.resolve(target), bytes: png.length }))
+console.log(JSON.stringify({ target: path.resolve(target), palette: args.palette, bytes: png.length }))
