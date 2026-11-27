@@ -5,6 +5,7 @@ import path from 'node:path'
 
 import { DEFAULTS, sanitize, merge } from '../lib/defaults.js'
 import { parseRange, serveFile } from '../lib/http.js'
+import { refusalFor, refusalMessage } from '../lib/gate.js'
 import { kindOf, contentTypeFor, safeFileName } from '../lib/media.js'
 
 // ── sanitize ────────────────────────────────────────────────────────────────
@@ -76,4 +77,29 @@ assert.equal(head.body, null, 'HEAD 不带体')
 assert.equal(head.headers.get('content-length'), '10')
 
 fs.rmSync(dir, { recursive: true, force: true })
+
+// ── refusalFor ──────────────────────────────────────────────────────────────
+const fakeCtx = (connection) => ({ get: (key) => (key === 'connection' ? connection : undefined) })
+const nodeReq = { headers: { host: '127.0.0.1:3697', origin: 'https://evil.example' }, method: 'GET', url: '/dsh-media-skin/api/state' }
+
+assert.equal(refusalFor(fakeCtx(undefined), nodeReq), undefined, '宿主无 connection 时放行')
+assert.equal(refusalFor(fakeCtx({}), nodeReq), undefined, 'connection 无闸门方法时放行')
+assert.equal(refusalFor(fakeCtx({ requestRejection: () => 403 }), nodeReq), 403, 'requestRejection 的 403 透传')
+assert.equal(refusalFor(fakeCtx({ requestRejection: () => undefined }), nodeReq), undefined, 'requestRejection 放行')
+assert.equal(refusalFor(fakeCtx({ requestRejection: () => { throw new Error('boom') } }), nodeReq), 403, 'requestRejection 抛错按拒绝')
+assert.equal(refusalFor(fakeCtx({ admit: () => ({ rejection: 401 }) }), nodeReq), 401, 'admit 的 rejection 透传')
+assert.equal(refusalFor(fakeCtx({ admit: () => ({ peer: {} }) }), nodeReq), undefined, 'admit 放行')
+assert.deepEqual(
+  (() => {
+    let seen
+    refusalFor(fakeCtx({ admit: (facts) => { seen = facts; return { peer: {} } } }), nodeReq)
+    return seen.url
+  })(),
+  'http://127.0.0.1:3697/dsh-media-skin/api/state',
+  'admit 收到绝对 url',
+)
+assert.equal(refusalFor(fakeCtx({ requestRejection: () => 403, admit: () => ({ peer: {} }) }), nodeReq), 403, '优先 requestRejection')
+assert.equal(refusalMessage(401).includes('登录'), true, '401 有文案')
+assert.equal(refusalMessage(999), '请求被拒绝', '未登记状态码有兜底')
+
 console.log('all assertions passed')

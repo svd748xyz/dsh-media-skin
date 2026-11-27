@@ -1,6 +1,6 @@
 {
   "name": "dsh-media-skin",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "DSH 本地媒体皮肤：把任意本地图片或视频铺成界面背景，模糊、不透明度、亮度、饱和度、对比度、填充方式与缩放都能实时调，设置自动保存。",
   "license": "MIT",
   "author": "svd748xyz",

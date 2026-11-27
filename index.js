@@ -1,30 +1,21 @@
 /**
- * dsh-media-skin —— 宿主半边。
+ * 宿主半边：设置读写、素材上传、素材下发三条路由。
  *
- * 只做四件事，全部是"把本机素材交给页面"这条路：
- *   ① GET  /dsh-media-skin/api/state   当前设置 + 当前素材（类型/大小/URL）
- *   ② POST /dsh-media-skin/api/state   把界面上的补丁合并进设置文件（滑块、开关、路径）
- *   ③ POST /dsh-media-skin/api/upload  接收一份本地文件副本，存进 $DSH_HOME/dsh-media-skin/media/
- *   ④ GET  /dsh-media-skin/media       把当前素材发出去（带 Range，视频才能拖进度条）
+ *   GET|POST /dsh-media-skin/api/state   读 / 合并写设置
+ *   POST      /dsh-media-skin/api/upload 存一份素材副本到 $DSH_HOME/dsh-media-skin/media/
+ *   GET|HEAD  /dsh-media-skin/media      下发当前素材（带 Range）
  *
- * 为什么背景层不由宿主注入 index.html 来做：页面侧是 React 渲染树，背景层需要跟着
- * 设置实时变（模糊滑块要跟手），交给客户端的 ctx.effect 管生命周期更干净 —— 插件卸载
- * 或热替换时背景层自己就没了，不会在 DOM 里留一个孤儿节点。
- *
- * 失败策略：这个插件里任何一步出错都只影响皮肤本身（接口返回 4xx/5xx、页面显示"素材不可用"），
- * 绝不向上抛 —— 一个壁纸插件不该有能力让 DSH 起不来。
+ * `webServer` 用 `ctx.inject` 迟到接入，非 Web 的 profile 里没有页面可用但插件正常加载。
  */
 import { resolveMedia, kindOf, saveUpload, safeFileName, UPLOAD_LIMIT_BYTES, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS } from './lib/media.js'
 import { readBody, readJsonBody, sendJson, serveFile, text } from './lib/http.js'
+import { refusalFor, refusalMessage } from './lib/gate.js'
 import { patchSettings, readSettings } from './lib/store.js'
 
 /** Cordis 诊断用的插件名。 */
 export const name = 'media-skin'
 
-/**
- * 没有必需服务：`webServer` 用 `ctx.inject` 迟到接入。
- * 这样在非 Web 的 profile 里插件也能正常加载（只是没有页面可用），不会变成 FAILED fiber。
- */
+/** 无必需服务。 */
 export const inject = []
 
 /** 所有路由共享的前缀。 */
@@ -37,17 +28,17 @@ const UPLOAD_ROUTE = `${ROUTE_PREFIX}/api/upload`
 /** 素材本体。 */
 const MEDIA_ROUTE = `${ROUTE_PREFIX}/media`
 
-/** 支持格式的提示文本（报错时告诉用户到底能放什么）。 */
+/** 支持格式的提示文本。 */
 const FORMAT_HINT = `支持的图片：${[...IMAGE_EXTENSIONS].join(' ')}；支持的视频：${[...VIDEO_EXTENSIONS].join(' ')}`
 
-/** 把任意异常变成一句能展示的话。 */
+/** 异常转文案。 */
 function describeError(error) {
   if (error instanceof Error) return error.message
   return String(error)
 }
 
 /**
- * 组装一份给客户端的完整快照。
+ * 组装给客户端的快照。
  * @param {object} settings 当前设置。
  */
 export function describe(settings) {
@@ -71,11 +62,17 @@ export function describe(settings) {
 }
 
 /**
- * `GET /api/state` 读、`POST /api/state` 写。
+ * `GET|HEAD /api/state` 读、`POST /api/state` 写。
  * @param {import('node:http').IncomingMessage} req 请求。
  * @param {import('node:http').ServerResponse} res 响应。
+ * @param {import('@deepseek-ai/cordis').Context} ctx 插件上下文。
  */
-async function handleState(req, res) {
+async function handleState(req, res, ctx) {
+  const refusal = refusalFor(ctx, req)
+  if (refusal !== undefined) {
+    sendJson(res, { error: refusalMessage(refusal) }, refusal)
+    return
+  }
   if (req.method === 'GET' || req.method === 'HEAD') {
     sendJson(res, describe(readSettings()))
     return
@@ -96,12 +93,17 @@ async function handleState(req, res) {
 }
 
 /**
- * `POST /api/upload` 收一份文件副本。
- * 文件名走 `x-dms-name` 头（客户端先 encodeURIComponent 一次，因为 HTTP 头只安全地承载 ASCII）。
+ * `POST /api/upload` 收一份文件副本，文件名走 `x-dms-name` 头（encodeURIComponent 一次）。
  * @param {import('node:http').IncomingMessage} req 请求。
  * @param {import('node:http').ServerResponse} res 响应。
+ * @param {import('@deepseek-ai/cordis').Context} ctx 插件上下文。
  */
-async function handleUpload(req, res) {
+async function handleUpload(req, res, ctx) {
+  const refusal = refusalFor(ctx, req)
+  if (refusal !== undefined) {
+    sendJson(res, { error: refusalMessage(refusal) }, refusal)
+    return
+  }
   if (req.method !== 'POST') {
     res.writeHead(405, { allow: 'POST' })
     res.end()
@@ -134,11 +136,15 @@ async function handleUpload(req, res) {
 }
 
 /**
- * `GET /media` 下发当前素材。
- * @param {Request} request Fetch 请求（host 只在 GET/HEAD 时调用 resource）。
+ * `GET|HEAD /media` 下发当前素材。
+ * @param {Request} request Fetch 请求（resource 路由只收 GET/HEAD）。
+ * @param {import('@deepseek-ai/cordis').Context} ctx 插件上下文。
  * @returns {Promise<Response>} 响应。
  */
-async function handleMedia(request) {
+async function handleMedia(request, ctx) {
+  const refusal = refusalFor(ctx, request)
+  if (refusal !== undefined) return text(refusalMessage(refusal), refusal)
+
   let settings
   try {
     settings = readSettings()
@@ -162,15 +168,15 @@ export function apply(ctx) {
   ctx.inject(['webServer'], (child) => {
     const web = child.webServer
     child.effect(
-      () => web.register({ kind: 'exact', path: STATE_ROUTE, handler: handleState }),
+      () => web.register({ kind: 'exact', path: STATE_ROUTE, handler: (req, res) => handleState(req, res, child) }),
       'media-skin: state route',
     )
     child.effect(
-      () => web.register({ kind: 'exact', path: UPLOAD_ROUTE, handler: handleUpload }),
+      () => web.register({ kind: 'exact', path: UPLOAD_ROUTE, handler: (req, res) => handleUpload(req, res, child) }),
       'media-skin: upload route',
     )
     child.effect(
-      () => web.register({ kind: 'exact', path: MEDIA_ROUTE, resource: handleMedia }),
+      () => web.register({ kind: 'exact', path: MEDIA_ROUTE, resource: (request) => handleMedia(request, child) }),
       'media-skin: media route',
     )
   })
