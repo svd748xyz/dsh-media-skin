@@ -2,7 +2,10 @@
 
 Whole window, or split with separate images for the content area and the left sidebar. Each layer
 has its own cropper — drag to frame it, scroll to zoom, and the preview frame is exactly what lands.
-No more fixed fit / position / zoom presets. Each layer also keeps its own blur, media opacity,
+No more fixed fit / position / zoom presets. Framing is stored in **image coordinates** (an anchor plus
+the target box in pixels), so enlarging the window, going fullscreen or collapsing the sidebar never
+drags the picture sideways; the fixed-width sidebar column defaults to "lock framing", where a taller
+window only reveals more and the extra space is filled with a blurred copy instead of re-zooming the shot. Each layer also keeps its own blur, media opacity,
 brightness, saturation and contrast: click a media card to switch which layer the sliders edit, so
 there is still only one set of sliders, and one "Copy look to ..." button pushes the whole set to the
 other layer in split mode. There is a single fade control — each layer's media opacity — and blur runs

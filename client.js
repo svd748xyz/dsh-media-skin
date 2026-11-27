@@ -83,6 +83,8 @@ window.__ModuleLoader__.load({
       cropReset: '复位',
       cropHint: '拖动 = 平移，滚轮 = 缩放；框内就是最终效果',
       cropAspect: '目标区域',
+      lockFit: '锁住取景',
+      lockFitHint: '窗口放大时不再重新铺满：构图停在裁剪这一刻，多出来的地方用同图虚化补上',
       zoomOut: '缩小',
       zoomIn: '放大',
       reset: '恢复默认',
@@ -134,6 +136,8 @@ window.__ModuleLoader__.load({
       cropReset: 'Reset',
       cropHint: 'Drag to pan, scroll to zoom; the frame is the final result',
       cropAspect: 'Target area',
+      lockFit: 'Lock framing',
+      lockFitHint: 'No re-fit when the window grows: the framing stays where you cropped it and the extra space is filled with a blurred copy',
       zoomOut: 'Zoom out',
       zoomIn: 'Zoom in',
       reset: 'Reset to defaults',
@@ -168,6 +172,9 @@ window.__ModuleLoader__.load({
     /** 画面参数的默认值（与宿主 lib/defaults.js 的 DEFAULT_LOOK 一致）。 */
     const DEFAULT_LOOK = { blur: 0, mediaOpacity: 100, brightness: 100, saturate: 100, contrast: 100 }
 
+        /** 「恢复默认」写入的裁切：居中、不放大、fit 回 auto，锚点与基准框复位。 */
+    const RESET_CROP = { x: 0.5, y: 0.5, zoom: 1, fit: 'auto', ax: 0.5, ay: 0.5, fw: 0, fh: 0 }
+
     /** 裁切缩放区间（与宿主 CROP_RANGES 一致）。 */
     const ZOOM_MIN = 1
     const ZOOM_MAX = 4
@@ -194,12 +201,21 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) #dms-backdrop{background:#0e11
 #dms-backdrop .dms-layer[data-layer="sidebar"]{right:auto;width:var(--dms-sidebar-w,264px)}
 #dms-backdrop .dms-layer[data-hidden="1"]{display:none}
 #dms-backdrop .dms-holder{position:absolute;inset:0}
-#dms-backdrop .dms-media{position:absolute;inset:0;width:100%;height:100%;display:block;
-  object-fit:cover;object-position:var(--dms-px,50%) var(--dms-py,50%);
-  transform:scale(var(--dms-zoom,1));transform-origin:center center;
+/* 素材：宽高与位置由 layout() 按取景锚点计算后以 px 写入。
+   不使用 object-fit 的自动 cover：自动 cover 在容器尺寸变化时重新铺满，
+   取景会沿溢出方向重新分配；这里固定锚点居中，容器变化只改变露出的范围。 */
+#dms-backdrop .dms-media{position:absolute;left:0;top:0;width:100%;height:100%;display:block;
+  object-fit:cover;object-position:center;
   opacity:var(--dms-opacity,1);
   filter:brightness(var(--dms-brightness,1)) saturate(var(--dms-saturate,1)) contrast(var(--dms-contrast,1));
   transition:opacity 240ms ease}
+/* 取景锁定（lock）：素材按 crop.fw / crop.fh 记录的基准框缩放；基准框小于容器时露出的
+   空隙由 .dms-wash（同一素材放大 + 模糊）填充，避免出现纯色边。 */
+#dms-backdrop .dms-wash{position:absolute;inset:-10%;display:none;pointer-events:none;
+  background-image:var(--dms-wash-img,none);background-size:cover;background-position:center;
+  opacity:var(--dms-opacity,1);
+  filter:blur(30px) brightness(var(--dms-brightness,1)) saturate(var(--dms-saturate,1)) contrast(var(--dms-contrast,1))}
+#dms-backdrop .dms-layer[data-wash="1"] .dms-wash{display:block}
 /* 模糊：**不改素材的尺寸**。以前是把容器反向放大来推掉模糊的软边，cover 的比例跟着容器变，
    结果一拖模糊整张图就自己放大。这里换成盖在素材上的一层 backdrop-filter：它采样的是
    "已经画好的背景"（Chromium 对采样做边缘 clamp），素材元素保持铺满视口，取景一格都不动。 */
@@ -460,6 +476,15 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
    压在黑底上会"消失"。这里固定成白底深字，任何主题都读得出来。 */
 .dms-crop-foot .dms-btn-primary{background:#ffffff;border-color:transparent;color:#141821;font-weight:600}
 .dms-crop-foot .dms-btn-primary:hover:not(:disabled){background:#f1f4f9;color:#141821}
+/* 裁切器内的取景锁定开关：深色卡片上用固定配色，
+   不取主题 token，避免浅色主题（主色接近白）时对比度不足。 */
+.dms-crop-lock{display:flex;align-items:center;justify-content:center;gap:8px;
+  color:rgba(238,243,250,.74);font-size:11px;line-height:1.3;text-align:center}
+.dms-crop-lock .dms-switch{background:rgba(255,255,255,.24)}
+.dms-crop-lock .dms-switch[data-on="1"]{background:#ffffff}
+.dms-crop-lock .dms-switch::after{background:#d7dced}
+.dms-crop-lock .dms-switch[data-on="1"]::after{background:#141821}
+.dms-crop-lock-hint{color:rgba(238,243,250,.5);font-size:10.5px}
 
 @media (prefers-reduced-motion:reduce){
   .dms-panel,.dms-crop-overlay{animation:none}
@@ -525,6 +550,72 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
       return width
     }
 
+    // ─────────────────────────── 取景几何 ───────────────────────────
+
+    /** 取景方式（与宿主 lib/defaults.js 的 FIT_MODES 一致）。 */
+    const FIT_MODES = ['auto', 'cover', 'lock']
+
+    /**
+     * 解析图层实际生效的取景方式。
+     * `auto` 按图层给默认值：`sidebar` 宽度固定、高度随窗口变化，取 `lock`；
+     * 其余图层宽高都随窗口变化，取 `cover`。
+     */
+    function resolveFit(fit, layerKey) {
+      const value = FIT_MODES.includes(fit) ? fit : 'auto'
+      if (value === 'cover' || value === 'lock') return value
+      return layerKey === 'sidebar' ? 'lock' : 'cover'
+    }
+
+    /** 素材的自然尺寸；视频要等元数据到位，没到位返回 null（load 事件到了再来一次）。 */
+    function naturalSizeOf(element) {
+      if (element === null || element === undefined) return null
+      if (element.tagName === 'VIDEO') {
+        return element.videoWidth > 0 && element.videoHeight > 0
+          ? { width: element.videoWidth, height: element.videoHeight }
+          : null
+      }
+      return element.naturalWidth > 0 && element.naturalHeight > 0
+        ? { width: element.naturalWidth, height: element.naturalHeight }
+        : null
+    }
+
+    /** 图像铺满一个框所需的最小尺寸（再乘 zoom）。 */
+    function coverSizeOf(imageWidth, imageHeight, boxWidth, boxHeight, zoom) {
+      if (!(imageWidth > 0 && imageHeight > 0 && boxWidth > 0 && boxHeight > 0)) return null
+      const factor = zoom > 0 ? zoom : 1
+      const scale = Math.max(boxWidth / imageWidth, boxHeight / imageHeight) * factor
+      if (!(scale > 0) || !Number.isFinite(scale)) return null
+      return { width: imageWidth * scale, height: imageHeight * scale }
+    }
+
+    /**
+     * 裁切参数（object-position 百分比）→ 图像坐标锚点（0–1）。
+     * 锚点是容器中心对应的图像位置。`x/y` 的分母是溢出面积，会随容器尺寸变化；
+     * 换算成锚点后，容器尺寸变化时按锚点重新对中，取景位置保持不变。
+     */
+    function anchorOfCrop(crop, boxWidth, boxHeight, imageWidth, imageHeight) {
+      const size = coverSizeOf(imageWidth, imageHeight, boxWidth, boxHeight, crop.zoom)
+      if (size === null) return { cx: 0.5, cy: 0.5 }
+      const overflowX = Math.max(0, size.width - boxWidth)
+      const overflowY = Math.max(0, size.height - boxHeight)
+      return {
+        cx: (overflowX * clampNumber(crop.x, 0, 1) + boxWidth / 2) / size.width,
+        cy: (overflowY * clampNumber(crop.y, 0, 1) + boxHeight / 2) / size.height,
+      }
+    }
+
+    /** 锚点 → 裁切参数；裁剪框按当前容器比例打开时，用它把已有取景投影回 object-position。 */
+    function cropOfAnchor(anchor, boxWidth, boxHeight, imageWidth, imageHeight, zoom) {
+      const size = coverSizeOf(imageWidth, imageHeight, boxWidth, boxHeight, zoom)
+      if (size === null) return { x: 0.5, y: 0.5 }
+      const project = (overflow, half, total, center) =>
+        overflow > 0.5 ? clampNumber((center * total - half) / overflow, 0, 1) : 0.5
+      return {
+        x: project(size.width - boxWidth, boxWidth / 2, size.width, clampNumber(anchor.cx, 0, 1)),
+        y: project(size.height - boxHeight, boxHeight / 2, size.height, clampNumber(anchor.cy, 0, 1)),
+      }
+    }
+
     // ─────────────────────────── 背景层引擎 ───────────────────────────
 
     /**
@@ -534,11 +625,101 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
     function createEngine() {
       const root = document.documentElement
       let layer = null
+      let rafId = 0
+      let observer = null
       const nodes = { full: null, main: null, sidebar: null }
       const keyOf = { full: '', main: '', sidebar: '' }
+      /** 每层当前生效的取景：模式、裁切参数、锚点与基准框；容器尺寸变化时按它重排。 */
+      const fitOf = { full: null, main: null, sidebar: null }
 
       function syncSidebarWidth() {
         root.style.setProperty('--dms-sidebar-w', `${measureSidebarWidth(true)}px`)
+      }
+
+      /**
+       * 计算图层素材的尺寸与位置，写到元素的内联样式上。
+       *
+       * 缩放由基准框决定：
+       *   cover —— 基准框为当前容器，素材始终铺满；
+       *   lock  —— 基准框为 crop.fw / crop.fh，缩放固定，容器变大只增加露出范围。
+       * 位置：让锚点 (cx, cy) 落在容器中心，再夹到
+       * [min(0, 容器 - 素材), max(0, 容器 - 素材)]，即素材大于容器时不留边、小于容器时居中。
+       * 同一份取景重复调用得到相同结果。
+       */
+      function layout(key) {
+        const slot = nodes[key]
+        const fit = fitOf[key]
+        if (slot === null || fit === null || slot.media === null) return
+        const natural = naturalSizeOf(slot.media)
+        const boxWidth = slot.layer.clientWidth
+        const boxHeight = slot.layer.clientHeight
+        if (natural === null || !(boxWidth > 0 && boxHeight > 0)) return
+        // 素材尺寸就绪后计算锚点；此后沿用同一锚点。
+        if (fit.anchor === null) {
+          fit.anchor = anchorOfCrop(fit.crop, boxWidth, boxHeight, natural.width, natural.height)
+        }
+        // 视频无法用背景图做虚化垫底，取景锁定时按 cover 处理。
+        const locked = fit.mode === 'lock' && slot.media.tagName !== 'VIDEO'
+        let refWidth = boxWidth
+        let refHeight = boxHeight
+        if (locked) {
+          if (fit.crop.fw > 0 && fit.crop.fh > 0) {
+            refWidth = fit.crop.fw
+            refHeight = fit.crop.fh
+          } else {
+            // 未记录基准框：取首次排版时的容器尺寸，本次会话内保持不变。
+            if (fit.frame === null) fit.frame = { width: boxWidth, height: boxHeight }
+            refWidth = fit.frame.width
+            refHeight = fit.frame.height
+          }
+        }
+        const size = coverSizeOf(natural.width, natural.height, refWidth, refHeight, fit.crop.zoom)
+        if (size === null) return
+        const left = clampNumber(
+          boxWidth / 2 - fit.anchor.cx * size.width,
+          Math.min(0, boxWidth - size.width),
+          Math.max(0, boxWidth - size.width),
+        )
+        const top = clampNumber(
+          boxHeight / 2 - fit.anchor.cy * size.height,
+          Math.min(0, boxHeight - size.height),
+          Math.max(0, boxHeight - size.height),
+        )
+        slot.media.style.width = `${size.width.toFixed(2)}px`
+        slot.media.style.height = `${size.height.toFixed(2)}px`
+        slot.media.style.left = `${left.toFixed(2)}px`
+        slot.media.style.top = `${top.toFixed(2)}px`
+        const gap = size.width < boxWidth - 0.5 || size.height < boxHeight - 0.5
+        slot.layer.dataset.wash = gap && slot.wash !== null ? '1' : '0'
+      }
+
+      /** 侧栏宽度 + 全部图层重排（窗口尺寸、侧栏折叠都走这里）。 */
+      function relayout() {
+        rafId = 0
+        syncSidebarWidth()
+        for (const key of LAYERS) layout(key)
+      }
+
+      /** 合并同一帧里的多次触发：拖窗口边时 resize 会连发几十次。 */
+      function scheduleRelayout() {
+        if (rafId !== 0) return
+        rafId = window.requestAnimationFrame(relayout)
+      }
+
+      /**
+       * 监听内容区容器尺寸。DSH 侧栏折叠/展开不触发 window resize，
+       * 但内容区左缘变化，背景层需要据此重排。
+       */
+      function watchShell() {
+        if (observer !== null || typeof ResizeObserver !== 'function') return
+        try {
+          const target = document.querySelector('[class*="centerCol"], [class*="mainPanel"]')
+          if (target === null) return
+          observer = new ResizeObserver(() => scheduleRelayout())
+          observer.observe(target)
+        } catch {
+          observer = null
+        }
       }
 
       function ensureLayer() {
@@ -551,6 +732,10 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
           el.className = 'dms-layer'
           el.dataset.layer = key
           el.dataset.hidden = '1'
+          // 虚化垫底：取景锁定且素材小于容器时显示。
+          const wash = document.createElement('div')
+          wash.className = 'dms-wash'
+          el.appendChild(wash)
           const holder = document.createElement('div')
           holder.className = 'dms-holder'
           el.appendChild(holder)
@@ -560,10 +745,12 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
           frost.dataset.on = '0'
           el.appendChild(frost)
           layer.appendChild(el)
-          nodes[key] = { layer: el, holder, frost, media: null }
+          nodes[key] = { layer: el, holder, wash, frost, media: null, ready: null }
         }
         document.body.insertBefore(layer, document.body.firstChild)
-        window.addEventListener('resize', syncSidebarWidth)
+        window.addEventListener('resize', scheduleRelayout)
+        document.addEventListener('fullscreenchange', scheduleRelayout)
+        watchShell()
       }
 
       /** 换素材时才重建 media 元素；滑块只改 CSS 变量，所以拖动不会重新解码视频。 */
@@ -591,12 +778,21 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
         el.src = info.url
         slot.holder.appendChild(el)
         slot.media = el
+        // 自然尺寸到位后才能算取景：图片等 load，视频等 loadedmetadata，两种都重排一次。
+        const ready = () => layout(key)
+        slot.ready = ready
+        el.addEventListener(info.kind === 'video' ? 'loadedmetadata' : 'load', ready)
       }
 
       function dropMedia(key) {
         const slot = nodes[key]
         if (slot === null || slot.media === null) return
         const el = slot.media
+        if (slot.ready !== null) {
+          el.removeEventListener('load', slot.ready)
+          el.removeEventListener('loadedmetadata', slot.ready)
+          slot.ready = null
+        }
         if (el.tagName === 'VIDEO') {
           try {
             el.pause()
@@ -607,17 +803,28 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
         }
         if (el.parentNode !== null) el.parentNode.removeChild(el)
         slot.media = null
+        if (slot.layer !== null) slot.layer.dataset.wash = '0'
         keyOf[key] = ''
       }
 
       function clear() {
-        window.removeEventListener('resize', syncSidebarWidth)
+        window.removeEventListener('resize', scheduleRelayout)
+        document.removeEventListener('fullscreenchange', scheduleRelayout)
+        if (rafId !== 0) {
+          window.cancelAnimationFrame(rafId)
+          rafId = 0
+        }
+        if (observer !== null) {
+          observer.disconnect()
+          observer = null
+        }
         for (const key of LAYERS) dropMedia(key)
         if (layer !== null && layer.parentNode !== null) layer.parentNode.removeChild(layer)
         layer = null
         for (const key of LAYERS) {
           nodes[key] = null
           keyOf[key] = ''
+          fitOf[key] = null
         }
         for (const name of CSS_VARS) root.style.removeProperty(name)
         root.removeAttribute('data-dms')
@@ -656,18 +863,37 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
           const usable = enabledLayer && info && info.available === true && info.kind !== 'none' && typeof info.url === 'string'
           if (!usable) {
             dropMedia(key)
+            fitOf[key] = null
             slot.layer.dataset.hidden = '1'
             continue
           }
           ensureMedia(key, info)
           slot.layer.dataset.hidden = '0'
-          const crop = settings.layers && settings.layers[key] && settings.layers[key].crop ? settings.layers[key].crop : {}
-          const cropX = typeof crop.x === 'number' ? crop.x : 0.5
-          const cropY = typeof crop.y === 'number' ? crop.y : 0.5
-          const cropZoom = typeof crop.zoom === 'number' ? crop.zoom : 1
-          slot.layer.style.setProperty('--dms-px', `${(cropX * 100).toFixed(2)}%`)
-          slot.layer.style.setProperty('--dms-py', `${(cropY * 100).toFixed(2)}%`)
-          slot.layer.style.setProperty('--dms-zoom', String(cropZoom))
+          const rawCrop = settings.layers && settings.layers[key] && settings.layers[key].crop ? settings.layers[key].crop : {}
+          const crop = {
+            x: typeof rawCrop.x === 'number' ? rawCrop.x : 0.5,
+            y: typeof rawCrop.y === 'number' ? rawCrop.y : 0.5,
+            zoom: typeof rawCrop.zoom === 'number' ? rawCrop.zoom : 1,
+            // 基准框（px）。0 表示未记录，此时基准框取当前容器。
+            fw: typeof rawCrop.fw === 'number' ? rawCrop.fw : 0,
+            fh: typeof rawCrop.fh === 'number' ? rawCrop.fh : 0,
+          }
+          const fitMode = resolveFit(rawCrop.fit, key)
+          const storedAnchor =
+            typeof rawCrop.ax === 'number' && typeof rawCrop.ay === 'number' && Number.isFinite(rawCrop.ax) && Number.isFinite(rawCrop.ay)
+              ? { cx: rawCrop.ax, cy: rawCrop.ay }
+              : null
+          // 取景未变时沿用已算出的锚点，避免重复计算导致画面位移。
+          const framingKey = `${crop.x}|${crop.y}|${crop.zoom}|${crop.fw}|${crop.fh}|${storedAnchor === null ? '' : `${storedAnchor.cx}|${storedAnchor.cy}`}|${info.url}`
+          const previous = fitOf[key]
+          fitOf[key] =
+            previous !== null && previous.framingKey === framingKey
+              ? { ...previous, mode: fitMode, crop }
+              : { mode: fitMode, crop, anchor: storedAnchor, framingKey, frame: null }
+          if (slot.wash !== null) {
+            slot.wash.style.setProperty('--dms-wash-img', info.kind === 'image' ? `url("${info.url}")` : 'none')
+          }
+          layout(key)
 
           // 画面参数按图层各写一份：两张图可以调出完全不同的性格。
           const look = settings.layers && settings.layers[key] && settings.layers[key].look ? settings.layers[key].look : {}
@@ -780,14 +1006,48 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
       const t = props.t
       const media = props.media
       const [draft, setDraft] = React.useState(props.crop)
+      /** 取景锁定状态；初始值由 resolveFit 按图层类型给出。 */
+      const [lockFit, setLockFit] = React.useState(() => resolveFit(props.crop.fit, props.layerKey) === 'lock')
       const boxRef = React.useRef(null)
       const dragRef = React.useRef(null)
       const natRef = React.useRef([0, 0])
       const aspect = props.aspect
 
+      /** 预览框的等效像素尺寸；x/y 与锚点的换算只依赖比例。 */
+      const previewBox = () => ({ width: Math.max(1, aspect * 1000), height: 1000 })
+
       const rememberNatural = (width, height) => {
         if (!(width > 0 && height > 0)) return
         natRef.current = [width, height]
+        // 存在锚点时，按预览框比例投影回 object-position，
+        // 使裁剪器初始构图与当前渲染一致。
+        const source = props.crop
+        if (typeof source.ax !== 'number' || typeof source.ay !== 'number') return
+        const zoom = typeof source.zoom === 'number' ? source.zoom : 1
+        const box = previewBox()
+        const projected = cropOfAnchor({ cx: source.ax, cy: source.ay }, box.width, box.height, width, height, zoom)
+        setDraft({ x: projected.x, y: projected.y, zoom })
+      }
+
+      /**
+       * 应用裁切：写入 x / y / zoom、取景方式、锚点 ax / ay 与基准框 fw / fh。
+       * 锚点与基准框供 layout() 在不同容器尺寸下复现同一取景。
+       */
+      const applyDraft = () => {
+        const [naturalWidth, naturalHeight] = natRef.current
+        const box = previewBox()
+        const anchor = anchorOfCrop(draft, box.width, box.height, naturalWidth, naturalHeight)
+        const layerHeight = Math.max(1, window.innerHeight || 1)
+        props.onApply({
+          x: draft.x,
+          y: draft.y,
+          zoom: draft.zoom,
+          fit: lockFit ? 'lock' : 'cover',
+          ax: anchor.cx,
+          ay: anchor.cy,
+          fw: Math.round(layerHeight * aspect),
+          fh: Math.round(layerHeight),
+        })
       }
 
       /** 指针位移 → object-position 百分比。 */
@@ -916,6 +1176,24 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
             }),
             h('div', { className: 'dms-crop-grid' }),
           ),
+          media.kind === 'video'
+            ? null
+            : h(
+                'div',
+                { className: 'dms-crop-lock' },
+                h(
+                  'label',
+                  { className: 'dms-switch', 'data-on': lockFit ? '1' : '0', title: t('lockFitHint') },
+                  h('input', {
+                    type: 'checkbox',
+                    checked: lockFit,
+                    'aria-label': t('lockFit'),
+                    onChange: (event) => setLockFit(event.target.checked),
+                  }),
+                ),
+                h('span', null, t('lockFit')),
+              ),
+          media.kind === 'video' ? null : h('div', { className: 'dms-crop-lock-hint' }, t('lockFitHint')),
           h(
             'div',
             { className: 'dms-crop-foot' },
@@ -946,7 +1224,7 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
             h('button', { type: 'button', className: 'dms-btn', onClick: props.onCancel }, t('cropCancel')),
             h(
               'button',
-              { type: 'button', className: 'dms-btn dms-btn-primary', onClick: () => props.onApply(draft) },
+              { type: 'button', className: 'dms-btn dms-btn-primary', onClick: applyDraft },
               t('cropApply'),
             ),
           ),
@@ -1285,9 +1563,9 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
                 mode: 'full',
                 video: { rate: 1, paused: false },
                 layers: {
-                  full: { crop: { x: 0.5, y: 0.5, zoom: 1 }, look: { ...DEFAULT_LOOK } },
-                  main: { crop: { x: 0.5, y: 0.5, zoom: 1 }, look: { ...DEFAULT_LOOK } },
-                  sidebar: { crop: { x: 0.5, y: 0.5, zoom: 1 }, look: { ...DEFAULT_LOOK } },
+                  full: { crop: { ...RESET_CROP }, look: { ...DEFAULT_LOOK } },
+                  main: { crop: { ...RESET_CROP }, look: { ...DEFAULT_LOOK } },
+                  sidebar: { crop: { ...RESET_CROP }, look: { ...DEFAULT_LOOK } },
                 },
               }),
             }),
@@ -1663,6 +1941,7 @@ html[data-dms="on"]:has(body[data-ds-dark-theme]) .dms-thumb{box-shadow:inset 0 
               t,
               media: mediaOfCropping,
               crop: cropping.crop,
+              layerKey: cropping.layerKey,
               layerLabel: cropping.labelKey,
               aspect: aspectForLayer(cropping.layerKey, sidebarWidth),
               onCancel: () => setCropping(null),

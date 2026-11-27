@@ -54,13 +54,22 @@ DSH 的**本地媒体皮肤**：把任意本地图片 / 视频铺成 Web 界面�
 | 布局 | 整窗一张 / 分栏两张 | 分栏 = 内容区 + 左侧栏各自独立 |
 | 素材 | 每个图层一张卡 | 选择文件 / 清除；点缩略图进裁切器，点卡片切换调节对象 |
 | 裁切器 | 拖动 + 滚轮 | 预览框按目标区域比例绘制，所见即所得 |
+| 裁切器 | 锁住取景 | 侧栏默认开：窗口放大后不重新铺满，构图停在裁剪这一刻，多出来的地方用同图虚化补上 |
 | 画面（每层） | 模糊 · 画面不透明度 · 亮度 · 饱和度 · 对比度 | 0–60 px · 0–100% · 40–160% · 0–200% · 50–150% |
 | 画面（分栏） | 复制调色到「另一层」 | 五个参数整组过去；素材与裁切不变 |
 | 视频 | 播放速度（0.5×–2×）· 播放/暂停 | 仅视频素材 |
 
-裁切参数存的是 `{x, y, zoom}`：`x/y` 是取景中心（0–1），`zoom` 是相对 cover 的放大倍数（1–4）。
-背景层与裁切器用同一套 `object-fit:cover; object-position; transform:scale`，所以不会出现
-"预览好看、落地变形"。
+裁切参数存的是 `{x, y, zoom, fit, ax, ay, fw, fh}`：
+
+- `x/y`（0–1）与 `zoom`（1–4）：`object-position` 百分比与相对 cover 的放大倍数，裁切器按目标区域比例绘制，所见即所得；
+- `ax/ay`（0–1）：**取景锚点** —— 框中心压在图像的哪一点。窗口一改大小，旧写法里的百分比会随"溢出面积"漂到图像另一处（全屏后整块取景横向跳位就是这个），锚点是图像坐标，窗口再变也绕着同一点取景；
+- `fit`：`auto`（侧栏锁住取景、其余铺满）/ `cover` / `lock`；
+- `fw/fh`（px）：裁剪那一刻目标区域的真实像素框，`lock` 按它定格。
+
+侧栏是一条**定宽**竖条，铺满时高度一涨就得把整张图重新放大一遍（一张 3:1 的全景塞进 264px 只剩 8% 可见），
+所以它默认 `lock`：窗口放大只加视野，画面不再被二次裁切，多出来的地方用同一张图放大虚化垫底。
+背景层的几何由 `client.js` 里 `coverSizeOf / anchorOfCrop / layout` 现算成 px 写进媒体元素，
+窗口 resize、全屏切换、侧栏折叠都会重排一次。
 
 
 ## 设计参考
@@ -115,15 +124,18 @@ v4 结构的关键是 `layers`：每个图层一份素材、一份裁切、一�
   "mode": "split",
   "layers": {
     "full":    { "media": { "source": "upload", "path": "wall.jpg", "name": "wall.jpg" },
-                 "crop": { "x": 0.5, "y": 0.5, "zoom": 1 },
+                 "crop": { "x": 0.5, "y": 0.5, "zoom": 1, "fit": "auto", "ax": 0.5, "ay": 0.5, "fw": 0, "fh": 0 },
                  "look": { "blur": 0, "mediaOpacity": 100, "brightness": 100, "saturate": 100, "contrast": 100 } },
-    "main":    { "media": { "source": "none", "path": "", "name": "" }, "crop": { "x": 0.5, "y": 0.5, "zoom": 1 }, "look": { "...": "同上" } },
+    "main":    { "media": { "source": "none", "path": "", "name": "" }, "crop": { "x": 0.5, "y": 0.5, "zoom": 1, "fit": "auto", "ax": 0.5, "ay": 0.5, "fw": 0, "fh": 0 }, "look": { "...": "同上" } },
     "sidebar": { "media": { "source": "upload", "path": "side.jpg", "name": "side.jpg" },
-                 "crop": { "x": 0.5, "y": 0.5, "zoom": 1.4 },
+                 "crop": { "x": 0.643, "y": 1, "zoom": 1, "fit": "lock", "ax": 0.63, "ay": 0.5, "fw": 264, "fh": 900 },
                  "look": { "blur": 6, "mediaOpacity": 66, "brightness": 70, "saturate": 100, "contrast": 100 } }
   }
 }
 ```
+
+`ax/ay/fw/fh` 缺省（旧文件）时按 `x/y` 与当前窗口现推一次，本次会话内保持稳定；重新裁切一次就会写进设置。
+`fit` 缺省当 `auto`。
 
 旧文件读入时自动迁移：v1 的顶层 `media` 搬进 `layers.full`，九宫格位置翻译成 `crop.x/y`、
 `scale` 翻译成 `crop.zoom`、`fit` 落到 cover；v2 的顶层画面参数复制到三个图层的 `look`；

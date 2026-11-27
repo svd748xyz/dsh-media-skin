@@ -30,6 +30,23 @@ assert.equal(junk.mode, 'full', '非法 mode 回默认')
 assert.equal(junk.layers.full.crop.x, 1, '裁切 x 夹到 1')
 assert.equal(junk.layers.full.crop.y, 0, '裁切 y 夹到 0')
 assert.equal(junk.layers.full.crop.zoom, 4, 'zoom 夹到 4')
+// ── 取景锚点 / 基准框字段 ────────────────────────────────────────────────
+assert.equal(junk.layers.full.crop.fit, 'auto', '没写取景方式回 auto')
+assert.equal(junk.layers.full.crop.ax, 0.5, '没写锚点回正中间')
+assert.equal(junk.layers.full.crop.ay, 0.5, '没写锚点回正中间')
+assert.equal(junk.layers.full.crop.fw, 0, '没写基准框回 0')
+assert.equal(junk.layers.sidebar.crop.fit, 'auto', '侧栏默认也是 auto（客户端按图层解析成 lock）')
+const fitted = sanitize({
+  layers: { sidebar: { crop: { x: 0.3, y: 0.7, zoom: 1.2, fit: 'lock', ax: 1.4, ay: -0.2, fw: 3000.4, fh: 1200.6 } } },
+}).layers.sidebar.crop
+assert.equal(fitted.fit, 'lock', '显式 lock 保留')
+assert.equal(fitted.ax, 1, '锚点 ax 夹到 1')
+assert.equal(fitted.ay, 0, '锚点 ay 夹到 0')
+assert.equal(fitted.fw, 3000.4, '基准框宽保留')
+assert.equal(fitted.fh, 1200.6, '基准框高保留')
+assert.equal(sanitize({ layers: { full: { crop: { fit: 'wat', fw: 999999, fh: -5 } } } }).layers.full.crop.fit, 'auto', '非法取景方式回 auto')
+assert.equal(sanitize({ layers: { full: { crop: { fw: 999999 } } } }).layers.full.crop.fw, 20000, '基准框宽夹到上限')
+assert.equal(sanitize({ layers: { full: { crop: { fh: -5 } } } }).layers.full.crop.fh, 0, '基准框高夹到 0')
 assert.equal(junk.layers.full.look.blur, 60, '每层 blur 夹到上限')
 assert.equal(junk.layers.full.look.mediaOpacity, 50, '层内指定值保留')
 assert.equal(junk.layers.main.look.blur, 60, '旧顶层 blur 迁移到没写 look 的层')
